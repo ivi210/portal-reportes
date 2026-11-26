@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>Acceso restringido</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{display:grid;place-items:center;background:#193527;color:#193527;font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+  main{background:#fff;border-radius:14px;padding:30px 30px 24px;width:min(360px,calc(100vw - 48px));box-shadow:0 12px 40px rgba(0,0,0,.35)}
+  h1{font-size:19px;letter-spacing:.06em;margin:0 0 18px}
+  label{display:block;font-size:12px;font-weight:700;letter-spacing:.08em;margin:14px 0 6px}
+  input[type=text],input[type=password]{box-sizing:border-box;width:100%;padding:11px 12px;font:inherit;border:1px solid #9aa79f;border-radius:8px;background:#fff;color:#111}
+  input:focus-visible,button:focus-visible{outline:3px solid #E4AF45;outline-offset:2px}
+  .rec{display:flex;gap:8px;align-items:center;margin:16px 0 0;font-size:13px;font-weight:400;letter-spacing:0}
+  button{margin-top:18px;width:100%;padding:12px;font:inherit;font-weight:700;letter-spacing:.08em;border:0;border-radius:8px;background:#193527;color:#fff;cursor:pointer}
+  button[disabled]{opacity:.6;cursor:progress}
+  #aviso{min-height:20px;margin:14px 0 0;font-size:13px;font-weight:700;color:#a3231f}
+  #cargando{color:#fff;font-weight:700;letter-spacing:.1em}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main id="caja" hidden>
+  <h1>ACCESO RESTRINGIDO</h1>
+  <form id="f" autocomplete="on">
+    <label for="u">USUARIO</label>
+    <input id="u" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <label for="p">CLAVE</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <label class="rec"><input id="r" type="checkbox"> RECORDAR EN ESTE EQUIPO</label>
+    <button id="b" type="submit">ENTRAR</button>
+    <p id="aviso" role="alert"></p>
+  </form>
+</main>
+<p id="cargando" hidden>CARGANDO…</p>
+<noscript><p style="color:#fff">ESTA PÁGINA NECESITA JAVASCRIPT.</p></noscript>
+<script>
+(async function () {
+  const P = {"s":"QIu0lOJW5zFj675R9GseDQ==","n":600000,"c":"lLyDgkFsnPqVqJ+49qvBUrqK/FGZ7bGIOmniu/eJhOfzfU//gGEZ67oAYQ==","f":"fletes-report.html.enc","a":"reports/fletes/fletes-report.html"};
+  const K = 'acceso-portal:' + P.s;
+  const $ = id => document.getElementById(id);
+  const te = new TextEncoder();
+  const u8 = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+  const b64 = a => btoa(String.fromCharCode.apply(null, a));
+  const importar = raw => crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
+  const abrir = (key, blob, aad) => crypto.subtle.decrypt({ name: 'AES-GCM', iv: blob.subarray(0, 12), additionalData: te.encode(aad), tagLength: 128 }, key, blob.subarray(12));
+  async function valida(raw) { try { await abrir(await importar(raw), u8(P.c), 'verificacion'); return true; } catch (e) { return false; } }
+  async function derivar(usuario, clave) {
+    const texto = (usuario.trim().toLowerCase() + '\n' + clave.trim()).normalize('NFC');
+    const mat = await crypto.subtle.importKey('raw', te.encode(texto), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: u8(P.s), iterations: P.n }, mat, 256));
+  }
+  function leer() { for (const st of ['sessionStorage', 'localStorage']) { try { const v = window[st].getItem(K); if (v) return u8(v); } catch (e) {} } return null; }
+  function olvidar() { for (const st of ['sessionStorage', 'localStorage']) { try { window[st].removeItem(K); } catch (e) {} } }
+  function recordar(raw, siempre) { try { sessionStorage.setItem(K, b64(raw)); if (siempre) localStorage.setItem(K, b64(raw)); } catch (e) {} }
+  async function mostrar(raw) {
+    $('caja').hidden = true; $('cargando').hidden = false;
+    const r = await fetch(P.f, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = new Uint8Array(await r.arrayBuffer());
+    const html = new TextDecoder('utf-8').decode(await abrir(await importar(raw), blob, P.a));
+    document.open(); document.write(html); document.close();
+  }
+  function pedir(mensaje) {
+    $('cargando').hidden = true; $('caja').hidden = false; $('aviso').textContent = mensaje || '';
+    if (!$('u').value) $('u').focus(); else $('p').focus();
+  }
+  if (!window.crypto || !crypto.subtle) { pedir('ESTE NAVEGADOR NO PERMITE ABRIR EL SITIO. USA CHROME, EDGE O SAFARI ACTUALIZADO.'); return; }
+  if (/[?&]salir\b/.test(location.search)) { olvidar(); pedir('SESIÓN CERRADA.'); }
+  else {
+    const guardada = leer();
+    if (guardada && await valida(guardada)) { try { await mostrar(guardada); return; } catch (e) { pedir('NO SE PUDO CARGAR LA PÁGINA. VUELVE A INTENTAR.'); } }
+    else { if (guardada) olvidar(); pedir(''); }
+  }
+  $('f').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    $('b').disabled = true; $('aviso').textContent = 'VERIFICANDO…';
+    let mostrado = false;
+    try {
+      const raw = await derivar($('u').value, $('p').value);
+      if (!(await valida(raw))) { $('aviso').textContent = 'USUARIO O CLAVE INCORRECTOS.'; $('p').select(); return; }
+      recordar(raw, $('r').checked);
+      await mostrar(raw); mostrado = true;
+    } catch (e) { pedir('NO SE PUDO CARGAR LA PÁGINA. VUELVE A INTENTAR.'); }
+    finally { if (!mostrado) { const b = $('b'); if (b) b.disabled = false; } }
+  });
+})();
+</script>
+</body>
+</html>

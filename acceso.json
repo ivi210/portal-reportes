@@ -1,0 +1,6 @@
+{
+  "sal": "QIu0lOJW5zFj675R9GseDQ==",
+  "vueltas": 600000,
+  "cifrado": "AES-256-GCM",
+  "derivacion": "PBKDF2-SHA256"
+}
